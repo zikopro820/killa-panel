@@ -46,7 +46,7 @@ async function iniciar(p) {
       <span class="tb-f">${fmtF(HOY(), { weekday: "long", day: "numeric", month: "long" })}</span>
       ${puede("reservas") ? `<button class="btn btn-pri btn-sm" id="nuevaR">${ico("plus")} <span>Nueva reserva</span></button>` : ""}</header>
       <main id="view" class="view" tabindex="-1"></main></div></div>`;
-  if ($("#sedeSel")) $("#sedeSel").value = SEDE;
+  if ($("#sedeSel")) $("#sedeSel").value = SEDE; marcaPanel();
   $(".s-nav").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) go(b.dataset.v); });
   $("#salir").addEventListener("click", salir); $("#menuB").addEventListener("click", () => $("#side").classList.toggle("open"));
   $("#sedeSel")?.addEventListener("change", e => { SEDE = e.target.value; store.set("kh_psede", SEDE); go(VISTA); });
@@ -498,20 +498,25 @@ VIEWS.habitaciones = async () => {
     `<div class="habs-a">${l.map(h => `<article class="card hab-a ${h.activa === false ? "off" : ""}"><div class="hab-f" style="background-image:url('${esc(IMG((h.fotos || [])[0], 500))}')"></div><div class="hab-ab">
       <div class="hab-h"><b>N.° ${esc(h.num)}</b><span class="muted">${esc(sedeDe(h.sede).nombre || "")}</span></div><p>${esc(h.tipo)} · hasta ${h.cap} · ${S(h.precio)}/noche</p>
       <div class="acts-g"><button class="btn btn-light btn-sm" data-eh="${esc(h.id)}">${ico("edit")} Editar</button>${h.qr ? `<button class="btn btn-light btn-sm" data-vq="${esc(h.id)}">${ico("qr")} Ver QR</button>` : `<button class="btn btn-pri btn-sm" data-gq="${esc(h.id)}">${ico("qr")} Crear QR</button>`}</div></div></article>`).join("") || vacio("Aún no hay habitaciones.")}</div>`;
-  const form = h => { const sedes = CAT.sedes.filter(s => misSedes().includes(s.id));
+  const form = async h => { const sedes = CAT.sedes.filter(s => misSedes().includes(s.id)); let FOTOS = [...(h?.fotos || []), ...(h ? ((await DB.get("galeria", h.id)) || {}).fotos || [] : [])].filter(Boolean).slice(0, 4);
     modal(h ? `Habitación ${h.num}` : "Nueva habitación", `<div class="g2">${fld("sede", "Sede", h?.sede || (SEDE !== "todas" ? SEDE : sedes[0]?.id), { opts: sedes.map(s => [s.id, s.nombre]) })}${fld("num", "Número", h?.num || "", { req: true })}
       ${fld("tipo", "Tipo / nombre", h?.tipo || "", { req: true, ph: "Doble estándar" })}${fld("tipo_en", "Nombre en inglés", h?.tipo_en || "", { ph: "Standard double" })}
       ${fld("cap", "Capacidad (personas)", h?.cap || 2, { type: "number", extra: 'min="1" max="12"' })}${fld("precio", "Precio por noche (S/)", h?.precio ?? "", { type: "number", req: true, extra: 'min="1" step="1"' })}
       ${fld("camas", "Camas", h?.camas || "", { ph: "1 cama queen" })}${fld("camas_en", "Camas en inglés", h?.camas_en || "", { ph: "1 queen bed" })}
       <div class="full"><span class="lbl">Comodidades</span><div class="amen-g">${AMEN.map(a => `<label class="chk sm"><input type="checkbox" name="am_${a}" ${(h?.amen || []).includes(a) ? "checked" : ""}><span>${a}</span></label>`).join("")}</div></div>
-      <div class="full"><span class="lbl">Foto</span><div class="foto-up"><span id="fPrev" style="background-image:url('${esc(IMG((h?.fotos || [])[0], 400))}')"></span><label class="btn btn-light btn-sm">${ico("camera")} Subir foto<input type="file" accept="image/*" id="fFile" hidden></label><input type="hidden" name="foto" value="${esc((h?.fotos || [])[0] || "")}"></div></div>
+      <div class="full"><span class="lbl">Fotos (hasta 4 · la primera es la principal)</span><div class="gal-ed" id="galEd"></div></div>
       ${fld("activa", "Visible en la web", h ? h.activa !== false : true, { type: "checkbox", full: true })}</div>${h ? `<button type="button" class="btn btn-light danger btn-sm" id="delH">${ico("trash")} Eliminar habitación</button>` : ""}`, async d => {
       const id = h?.id || (d.sede.slice(0, 3) + "-" + String(d.num).toLowerCase().replace(/\W/g, "")); if (!h && CAT.habs.find(x => x.id === id)) { toast("Ya existe esa habitación", true); return false; }
-      const data = { sede: d.sede, num: String(d.num), tipo: d.tipo, tipo_en: d.tipo_en, cap: +d.cap || 1, precio: +d.precio, camas: d.camas, camas_en: d.camas_en, amen: AMEN.filter(a => d["am_" + a]), fotos: d.foto ? [d.foto] : [], activa: d.activa, estado: h?.estado || "libre" };
-      await DB.set("habitaciones", id, data); const nh = { ...data, id, qr: h?.qr }; if (!h) await asegurarQR(nh); else if (h.qr && (h.num !== data.num || h.sede !== data.sede)) await DB.set("qr", h.qr, { num: data.num, sede: data.sede, hab: id });
+      const data = { sede: d.sede, num: String(d.num), tipo: d.tipo, tipo_en: d.tipo_en, cap: +d.cap || 1, precio: +d.precio, camas: d.camas, camas_en: d.camas_en, amen: AMEN.filter(a => d["am_" + a]), fotos: FOTOS.slice(0, 1), activa: d.activa, estado: h?.estado || "libre" };
+      await DB.batch([{ op: "set", col: "habitaciones", id, data }, { op: "set", col: "galeria", id, data: { fotos: FOTOS.slice(1) }, merge: false }]); const nh = { ...data, id, qr: h?.qr }; if (!h) await asegurarQR(nh); else if (h.qr && (h.num !== data.num || h.sede !== data.sede)) await DB.set("qr", h.qr, { num: data.num, sede: data.sede, hab: id });
       toast("Habitación guardada"); VIEWS.habitaciones(); }, "Guardar", { wide: true, alAbrir: F => {
-      $("#fFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 1000, .72); $("[name=foto]", F).value = u; $("#fPrev").style.backgroundImage = `url('${u}')`; });
-      $("#delH")?.addEventListener("click", async () => { if (!confirm(`¿Eliminar la habitación ${h.num}? Sus reservas pasadas se conservan.`)) return; await DB.batch([{ op: "del", col: "habitaciones", id: h.id }, ...(h.qr ? [{ op: "del", col: "qr", id: h.qr }, { op: "del", col: "pines", id: h.qr }] : [])]); cerrarModal(); VIEWS.habitaciones(); }); } }); };
+      const pintarG = () => { $("#galEd").innerHTML = FOTOS.map((f, k) => `<div class="g-th ${k ? "" : "main"}" style="background-image:url('${esc(IMG(f, 300))}')">${k ? `<button type="button" data-gp="${k}" title="Hacer principal">★</button>` : `<span>Principal</span>`}<button type="button" data-gx="${k}" aria-label="Quitar foto" title="Quitar">×</button></div>`).join("")
+        + (FOTOS.length < 4 ? `<label class="g-add">${ico("camera")}<span>Agregar fotos</span><input type="file" accept="image/*" multiple hidden id="gFile"></label>` : ""); };
+      pintarG();
+      $("#galEd").addEventListener("click", e => { const x = e.target.closest("[data-gx]"), pr = e.target.closest("[data-gp]");
+        if (x) { FOTOS.splice(+x.dataset.gx, 1); pintarG(); } if (pr) { const k = +pr.dataset.gp; FOTOS.unshift(FOTOS.splice(k, 1)[0]); pintarG(); } });
+      $("#galEd").addEventListener("change", async e => { if (e.target.id !== "gFile") return; for (const f of [...e.target.files].slice(0, 4 - FOTOS.length)) FOTOS.push(await redimensionar(f, 900, .66)); pintarG(); });
+      $("#delH")?.addEventListener("click", async () => { if (!confirm(`¿Eliminar la habitación ${h.num}? Sus reservas pasadas se conservan.`)) return; await DB.batch([{ op: "del", col: "habitaciones", id: h.id }, { op: "del", col: "galeria", id: h.id }, ...(h.qr ? [{ op: "del", col: "qr", id: h.qr }, { op: "del", col: "pines", id: h.qr }] : [])]); cerrarModal(); VIEWS.habitaciones(); }); } }); };
   $("#nh").addEventListener("click", () => form()); $("#qrAll").addEventListener("click", async () => { for (const h of l) await asegurarQR(h); pdfQRs(l); });
   $("#view").onclick = async e => { const eh = e.target.closest("[data-eh]"), vq = e.target.closest("[data-vq]"), gq = e.target.closest("[data-gq]");
     if (eh) return form(habDe(eh.dataset.eh)); if (gq) { await asegurarQR(habDe(gq.dataset.gq)); toast("QR creado"); return VIEWS.habitaciones(); }
@@ -532,21 +537,36 @@ VIEWS.sedes = async () => {
     `<div class="habs-a">${CAT.sedes.map(s => `<article class="card hab-a"><div class="hab-f" style="background-image:url('${esc(IMG(s.foto, 600))}')"></div><div class="hab-ab"><div class="hab-h"><b>${esc(s.nombre)}</b><span class="st pri">${esc({ ciudad: "Ciudad", turistico: "Turístico", playa: "Playa", campo: "Campo" }[s.tipo] || s.tipo)}</span></div>
       <p class="muted">${esc(s.direccion)}, ${esc(s.ciudad)}</p><p class="sm">${CAT.habs.filter(h => h.sede === s.id).length} habitaciones · WiFi ${esc(s.wifiNombre || "—")}</p><button class="btn btn-light btn-sm" data-es="${esc(s.id)}">${ico("edit")} Editar</button></div></article>`).join("")}</div>`;
   const lineas = a => (a || []).join("\n"), cerca = a => (a || []).map(c => `${c.n} | ${c.d || ""}`).join("\n"), tours = a => (a || []).map(x => `${x.n} | ${x.precio} | ${x.d || ""}`).join("\n");
-  const form = s => modal(s ? s.nombre : "Nueva sede", `<div class="g2">${fld("nombre", "Nombre", s?.nombre || "Killa ", { req: true })}${fld("tipo", "Estilo de la web", s?.tipo || "turistico", { opts: [["ciudad", "Ciudad"], ["turistico", "Turístico"], ["playa", "Playa"], ["campo", "Campo"]] })}
+  let TOURS = [];
+  const leerTours = () => { $$("#tourEd .t-row").forEach((r, i) => { const g = n => $(`[data-t=${n}]`, r).value.trim(); Object.assign(TOURS[i], { n: g("n"), n_en: g("n_en"), precio: g("precio"), d: g("d") }); }); return TOURS; };
+  const pintarTours = () => { $("#tourEd").innerHTML = TOURS.map((t, i) => `<div class="t-row" data-i="${i}"><label class="t-foto" style="background-image:url('${esc(t.foto || "")}')" title="Foto del tour">${t.foto ? "" : ico("camera")}<input type="file" accept="image/*" data-tf="${i}" hidden></label>
+      <div class="t-f"><input data-t="n" value="${esc(t.n || "")}" placeholder="Nombre del tour" aria-label="Nombre"><input data-t="n_en" value="${esc(t.n_en || "")}" placeholder="Name in English" aria-label="Nombre en inglés">
+      <input data-t="precio" type="number" min="0" value="${esc(t.precio ?? "")}" placeholder="Precio S/" aria-label="Precio"><input data-t="d" value="${esc(t.d || "")}" placeholder="Detalle (ej. 4 h con guía)" aria-label="Detalle"></div>
+      <button type="button" class="t-x" data-tx="${i}" aria-label="Quitar tour">${ico("trash")}</button></div>`).join("") || `<p class="muted sm">Sin tours. Agrega el primero.</p>`; };
+  const form = s => { TOURS = (s?.tours || []).map(t => ({ ...t })); return modal(s ? s.nombre : "Nueva sede", `<div class="g2">${fld("nombre", "Nombre", s?.nombre || "Killa ", { req: true })}${fld("tipo", "Estilo de la web", s?.tipo || "turistico", { opts: [["ciudad", "Ciudad"], ["turistico", "Turístico"], ["playa", "Playa"], ["campo", "Campo"]] })}
     ${fld("ciudad", "Ciudad", s?.ciudad || "", { req: true })}${fld("direccion", "Dirección", s?.direccion || "", { req: true })}${fld("telefono", "Teléfono", s?.telefono || "")}${fld("whatsapp", "WhatsApp de recepción", s?.whatsapp || "", { ph: "51987654321" })}
     ${fld("ruc", "RUC", s?.ruc || "")}${fld("razon", "Razón social", s?.razon || "")}${fld("wifiNombre", "Red WiFi", s?.wifiNombre || "")}${fld("wifiClave", "Clave WiFi", s?.wifiClave || "")}
     ${fld("desc", "Descripción", s?.desc || "", { type: "textarea", full: true, rows: 2 })}${fld("desc_en", "Descripción en inglés", s?.desc_en || "", { type: "textarea", full: true, rows: 2 })}
+    <div class="full sep">Portada de la web de esta sede</div>
+    ${fld("heroTit", "Título grande", s?.heroTit || "", { full: true, ph: "Vacío = texto del estilo (ej. «Despierta frente al mar»)" })}${fld("heroTit_en", "Título en inglés", s?.heroTit_en || "", { full: true })}
+    ${fld("heroSub", "Subtítulo", s?.heroSub || "", { type: "textarea", rows: 2 })}${fld("heroSub_en", "Subtítulo en inglés", s?.heroSub_en || "", { type: "textarea", rows: 2 })}
+    ${fld("servicios", "Servicios (Texto | Text in English | ícono)", (s?.servicios || []).map(x => `${x.es} | ${x.en || ""} | ${x.ic || ""}`).join("\n"), { type: "textarea", full: true, rows: 5, ph: "Piscina | Swimming pool | pool", help: "Íconos: wifi, coffee, car, pool, sun, wave, fire, parrilla, horse, tree, pet, compass, suitcase, mate, towel, hamaca, escritorio, clock, file, globe, check. Vacío = servicios del estilo." })}
     ${fld("reglas", "Reglas e info útil (una por línea)", lineas(s?.reglas), { type: "textarea", full: true })}${fld("reglas_en", "Reglas en inglés (una por línea)", lineas(s?.reglas_en), { type: "textarea", full: true })}
-    ${fld("cerca", "Lugares cercanos (nombre | distancia)", cerca(s?.cerca), { type: "textarea", full: true, ph: "Plaza de Armas | 5 min a pie" })}${fld("tours", "Tours (nombre | precio | detalle)", tours(s?.tours), { type: "textarea", full: true, ph: "Valle Sagrado | 120 | Día completo" })}
+    ${fld("cerca", "Lugares cercanos (nombre | distancia)", cerca(s?.cerca), { type: "textarea", full: true, ph: "Plaza de Armas | 5 min a pie" })}<div class="full"><span class="lbl">Tours y actividades (se reservan desde el QR de la habitación)</span><div id="tourEd" class="tour-ed"></div><button type="button" class="btn btn-light btn-sm" id="tAdd">${ico("plus")} Agregar tour</button></div>
     ${fld("resena", "Enlace para reseñas de Google", s?.resena || "", { full: true, ph: "https://g.page/r/…" })}
     <div class="full"><span class="lbl">Foto principal</span><div class="foto-up"><span id="fPrev" style="background-image:url('${esc(IMG(s?.foto, 400))}')"></span><label class="btn btn-light btn-sm">${ico("camera")} Subir foto<input type="file" accept="image/*" id="fFile" hidden></label><input type="hidden" name="foto" value="${esc(s?.foto || "")}"></div></div></div>`, async d => {
     const id = s?.id || d.nombre.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/^killa\s+/, "").replace(/\W+/g, "-").replace(/^-|-$/g, "") || "sede-" + Date.now().toString(36);
     const sp = t => t.split("\n").map(x => x.trim()).filter(Boolean), old = s ? (s.tours || []) : [];
     const data = { ...d, reglas: sp(d.reglas), reglas_en: sp(d.reglas_en), cerca: sp(d.cerca).map(x => { const [n, dd] = x.split("|").map(y => y.trim()); return { n, d: dd || "" }; }),
-      tours: sp(d.tours).map((x, i) => { const [n, p, dd] = x.split("|").map(y => y.trim()); const o = old.find(t => t.n === n); return { id: o?.id || "t-" + id + "-" + i, n, n_en: o?.n_en || "", precio: +p || 0, d: dd || "" }; }), orden: s?.orden ?? CAT.sedes.length };
+      tours: leerTours().filter(t => t.n).map((t, i) => ({ id: t.id || "t-" + id + "-" + Date.now().toString(36) + i, n: t.n, n_en: t.n_en, precio: +t.precio || 0, d: t.d, foto: t.foto || "" })),
+      servicios: sp(d.servicios).map(x => { const [es, en, ic] = x.split("|").map(y => (y || "").trim()); return { es, en: en || "", ic: ic || "check" }; }).filter(x => x.es), orden: s?.orden ?? CAT.sedes.length };
     const ops = [{ op: "set", col: "sedes", id, data }];
     if (s && (s.wifiNombre !== d.wifiNombre || s.wifiClave !== d.wifiClave)) CAT.habs.filter(h => h.sede === id && h.qr).forEach(h => ops.push({ op: "set", col: "qr", id: h.qr, data: { wifiNombre: d.wifiNombre, wifiClave: d.wifiClave } }));
-    await DB.batch(ops); toast("Sede guardada"); VIEWS.sedes(); }, "Guardar", { wide: true, alAbrir: F => $("#fFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 1400, .7); $("[name=foto]", F).value = u; $("#fPrev").style.backgroundImage = `url('${u}')`; }) });
+    await DB.batch(ops); toast("Sede guardada"); VIEWS.sedes(); }, "Guardar", { wide: true, alAbrir: F => { $("#fFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 1400, .7); $("[name=foto]", F).value = u; $("#fPrev").style.backgroundImage = `url('${u}')`; });
+    pintarTours();
+    $("#tAdd").addEventListener("click", () => { leerTours(); TOURS.push({ n: "", n_en: "", precio: "", d: "", foto: "" }); pintarTours(); $("#tourEd .t-row:last-child [data-t=n]").focus(); });
+    $("#tourEd").addEventListener("click", e => { const x = e.target.closest("[data-tx]"); if (x) { leerTours(); TOURS.splice(+x.dataset.tx, 1); pintarTours(); } });
+    $("#tourEd").addEventListener("change", async e => { if (e.target.dataset.tf == null) return; const f = e.target.files[0]; if (!f) return; leerTours(); TOURS[+e.target.dataset.tf].foto = await redimensionar(f, 700, .68); pintarTours(); }); } }); };
   $("#ns").addEventListener("click", () => form()); $("#view").onclick = e => { const b = e.target.closest("[data-es]"); if (b) form(sedeDe(b.dataset.es)); };
 };
 
@@ -572,6 +592,20 @@ VIEWS.ajustes = async () => {
   await cargarCatalogo(); const a = CAT.aj, sinDatos = !CAT.sedes.length;
   $("#view").innerHTML = topBar("Ajustes", "Datos generales, pagos y temporadas.") + `
     ${sinDatos || DEMO ? `<section class="card hi"><h2>${ico("download")} Cargar datos de ejemplo</h2><p>Crea las 4 sedes, sus habitaciones (con QR), los productos y los ajustes de ejemplo para empezar a editarlos. ${sinDatos ? "<b>Tu base de datos está vacía.</b>" : ""}</p><button class="btn btn-pri" id="seed">Cargar ejemplos</button></section>` : ""}
+    <form class="card" id="marcaF"><h2>${ico("star")} Marca y web</h2><div class="g2">
+      <div class="full"><span class="lbl">Logo (se ve en la web, el QR de cada habitación, comprobantes, recibos, tarjetas QR y este panel)</span>
+        <div class="foto-up"><span id="logoPrev" class="logo-prev">${a.logo ? `<img src="${esc(a.logo)}" alt="Logo">` : ico("moon")}</span><label class="btn btn-light btn-sm">${ico("camera")} ${a.logo ? "Cambiar logo" : "Subir logo"}<input type="file" accept="image/*" id="logoFile" hidden></label>
+        ${a.logo ? `<button type="button" class="btn btn-light btn-sm" id="logoX">Quitar</button>` : ""}<input type="hidden" name="logo" value="${esc(a.logo || "")}"><small class="muted">PNG con fondo transparente o blanco, cuadrado. Se achica solo.</small></div></div>
+      ${fld("usarColores", "Usar los colores de mi marca (si no, cada sede usa los colores de su estilo)", !!a.colorPri, { type: "checkbox", full: true })}
+      ${fld("colorPri", "Color principal", a.colorPri || "#1f2a37", { type: "color" })}${fld("colorAcc", "Color de acento (botones y detalles)", a.colorAcc || "#e3a447", { type: "color" })}
+      <div class="full sep">Redes sociales (salen en el pie de la web)</div>
+      ${fld("facebook", "Facebook", (a.redes || {}).facebook || "", { type: "url", ph: "https://facebook.com/…" })}${fld("instagram", "Instagram", (a.redes || {}).instagram || "", { type: "url", ph: "https://instagram.com/…" })}${fld("tiktok", "TikTok", (a.redes || {}).tiktok || "", { type: "url", ph: "https://tiktok.com/@…" })}
+      ${fld("ingles", "Mostrar la web también en inglés (botón ES / EN)", a.ingles !== false, { type: "checkbox" })}
+      <div class="full sep">Portada principal (cuando tienes varias sedes)</div>
+      <div class="full"><div class="foto-up"><span id="portPrev" style="background-image:url('${esc(IMG(a.portadaFoto, 500))}')"></span><label class="btn btn-light btn-sm">${ico("camera")} Foto de portada<input type="file" accept="image/*" id="portFile" hidden></label><input type="hidden" name="portadaFoto" value="${esc(a.portadaFoto || "")}"><small class="muted">Vacío = foto del estilo. Cada sede tiene su propia portada en Sedes.</small></div></div>
+      ${fld("portadaTit", "Título", a.portadaTit || "", { ph: "Vacío = texto del estilo" })}${fld("portadaTit_en", "Título en inglés", a.portadaTit_en || "")}
+      ${fld("portadaSub", "Subtítulo", a.portadaSub || "", { type: "textarea", rows: 2 })}${fld("portadaSub_en", "Subtítulo en inglés", a.portadaSub_en || "", { type: "textarea", rows: 2 })}</div>
+      <div class="f-end"><button class="btn btn-pri">${ico("check")} Guardar marca</button></div></form>
     <form class="card" id="ajF"><h2>General</h2><div class="g2">${fld("nombre", "Nombre de la marca", a.nombre)}${fld("whatsapp", "WhatsApp principal", a.whatsapp)}${fld("email", "Correo", a.email)}${fld("temaPrincipal", "Estilo de la portada (cuando hay varias sedes)", a.temaPrincipal, { opts: [["turistico", "Turístico"], ["ciudad", "Ciudad"], ["playa", "Playa"], ["campo", "Campo"]] })}
       ${fld("slogan", "Frase", a.slogan)}${fld("slogan_en", "Frase en inglés", a.slogan_en)}${fld("checkin", "Check-in desde", a.checkin, { type: "time" })}${fld("checkout", "Check-out hasta", a.checkout, { type: "time" })}
       ${fld("politicas", "Políticas (salen en el comprobante)", a.politicas, { type: "textarea", full: true })}${fld("politicas_en", "Políticas en inglés", a.politicas_en, { type: "textarea", full: true })}
@@ -582,6 +616,15 @@ VIEWS.ajustes = async () => {
       ${fld("pagoTransf", "Aceptar transferencias", a.pagoTransf !== false, { type: "checkbox" })}${fld("pagoOCR", "Leer las capturas automáticamente", a.pagoOCR !== false, { type: "checkbox" })}
       ${fld("cuentas", "Cuentas bancarias (banco | número | CCI | titular)", (a.cuentas || []).map(c => `${c.banco} | ${c.num} | ${c.cci} | ${c.titular}`).join("\n"), { type: "textarea", full: true, ph: "BCP | 191-12345678-0-12 | 002-191-... | Killa Hospedaje SAC", help: "Bancos con su color: BCP, Interbank, BBVA, Scotiabank, BanBif, Pichincha." })}</div>
       <div class="f-end"><button class="btn btn-pri">${ico("check")} Guardar ajustes</button></div></form>`;
+  const MF = $("#marcaF");
+  $("#logoFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 320, .92, "image/png"); $("[name=logo]", MF).value = u; $("#logoPrev").innerHTML = `<img src="${u}" alt="">`; });
+  $("#logoX")?.addEventListener("click", () => { $("[name=logo]", MF).value = ""; $("#logoPrev").innerHTML = ico("moon"); });
+  $("#portFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 1600, .68); $("[name=portadaFoto]", MF).value = u; $("#portPrev").style.backgroundImage = `url('${u}')`; });
+  MF.addEventListener("submit", async e => { e.preventDefault(); const d = datosForm(MF);
+    const x = { logo: d.logo, colorPri: d.usarColores ? d.colorPri : "", colorAcc: d.usarColores ? d.colorAcc : "", redes: { facebook: d.facebook, instagram: d.instagram, tiktok: d.tiktok }, ingles: d.ingles,
+      portadaFoto: d.portadaFoto, portadaTit: d.portadaTit, portadaTit_en: d.portadaTit_en, portadaSub: d.portadaSub, portadaSub_en: d.portadaSub_en };
+    if (JSON.stringify({ ...CAT.aj, ...x }).length > 950000) return toast("Las imágenes de Ajustes pesan demasiado (logo, portada y QR). Usa fotos más livianas.", true);
+    await DB.set("ajustes", "general", x); Object.assign(CAT.aj, x); marcaPanel(); toast("Marca guardada · ya se ve en la web"); });
   const F = $("#ajF");
   $$("[data-qr]", F).forEach(i => i.addEventListener("change", async e => { const f = e.target.files[0], k = e.target.dataset.qr; if (!f) return; const u = await redimensionar(f, 600, .92, "image/png"); $(`[name=${k}QR]`, F).value = u; $(`#${k}Prev`).innerHTML = `<img src="${u}" alt="">`; }));
   F.addEventListener("submit", async e => { e.preventDefault(); const d = datosForm(F), sp = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);

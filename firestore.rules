@@ -27,6 +27,7 @@ service cloud.firestore {
     match /sedes/{id}        { allow read: if true; allow write: if admin(); }
     match /habitaciones/{id} { allow read: if true; allow write: if equipo(); }
     match /productos/{id}    { allow read: if true; allow write: if equipo(); }
+    match /galeria/{id}      { allow read: if true; allow write: if equipo(); }   // fotos extra de cada habitación
 
     // ---------- QR de cada habitación: se lee solo si conoces el código ----------
     match /qr/{k} {

@@ -90,6 +90,12 @@ async function cargarCatalogo() {
   CAT.habs.sort((a, b) => ord(a.sede) - ord(b.sede) || String(a.num).localeCompare(String(b.num), "es", { numeric: true }));
   return CAT;
 }
+function marcaPanel() {   // logo y color de la marca también en el panel
+  const a = CAT.aj || {}, b = document.querySelector(".s-brand");
+  if (b) b.querySelector(".ic, img")?.replaceWith(Object.assign(document.createElement("span"), { innerHTML: a.logo ? `<img class="s-logo" src="${esc(a.logo)}" alt="">` : ico("moon") }).firstChild);
+  if (a.logo) { const l = document.querySelector('link[rel="icon"]'); if (l) { l.type = "image/png"; l.href = a.logo; } }
+  if (b) b.querySelector("b").textContent = a.nombre || "Killa";
+}
 const sedeDe = id => CAT.sedes.find(s => s.id === id) || {};
 const habDe = id => CAT.habs.find(h => h.id === id) || {};
 
@@ -145,9 +151,12 @@ const webBase = () => String(APP.web || "").replace(/\/$/, "");
 const linkHab = key => `${webBase()}/habitacion?k=${encodeURIComponent(key)}`;
 const linkReserva = c => `${webBase()}/mi-reserva?c=${encodeURIComponent(c)}`;
 async function jsPDF_() { await cargarScript(PDF_LIB); return window.jspdf.jsPDF; }
+const colPDF = () => { const h = String(CAT.aj.colorPri || "#1f2a37").replace("#", ""), n = parseInt(h, 16); return isNaN(n) ? [31, 42, 55] : [n >> 16, (n >> 8) & 255, n & 255]; };
+function logoPDF(doc, x, y, t) { if (!CAT.aj.logo) return false; try { doc.setFillColor(255, 255, 255); doc.roundedRect(x - 1, y - 1, t + 2, t + 2, 2.5, 2.5, "F"); doc.addImage(CAT.aj.logo, CAT.aj.logo.includes("image/png") ? "PNG" : "JPEG", x, y, t, t); return true; } catch (e) { return false; } }
 function cabeceraPDF(doc, s, titulo, W) {
-  doc.setFillColor(31, 42, 55); doc.rect(0, 0, W, 28, "F"); doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text(CAT.aj.nombre || "Killa Hospedaje", 10, 12);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text(`${s.nombre || ""} · ${s.direccion || ""}, ${s.ciudad || ""}`, 10, 18); doc.text(`RUC ${s.ruc || "—"} · ${s.razon || ""} · Tel. ${s.telefono || ""}`, 10, 23);
+  doc.setFillColor(...colPDF()); doc.rect(0, 0, W, 28, "F"); const X = logoPDF(doc, 9, 5, 18) ? 32 : 10;
+  doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text(CAT.aj.nombre || "Killa Hospedaje", X, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text(`${s.nombre || ""} · ${s.direccion || ""}, ${s.ciudad || ""}`, X, 18); doc.text(`RUC ${s.ruc || "—"} · ${s.razon || ""} · Tel. ${s.telefono || ""}`, X, 23);
   doc.setTextColor(30); doc.setFont("helvetica", "bold"); doc.setFontSize(12.5); doc.text(titulo, 10, 39);
 }
 async function pdfReserva(r, extra) {
@@ -176,8 +185,8 @@ async function pdfQRs(habs) {
     if (!h.qr) continue; const s = sedeDe(h.sede), col = i % 2, fil = Math.floor(i / 2) % 2; if (i && i % 4 === 0) doc.addPage();
     const x = 10 + col * 97, y = 10 + fil * 140, w = 93, hh = 134;
     doc.setDrawColor(200); doc.setLineDashPattern([2, 2], 0); doc.roundedRect(x, y, w, hh, 4, 4); doc.setLineDashPattern([], 0);
-    doc.setFillColor(31, 42, 55); doc.roundedRect(x + 4, y + 4, w - 8, 22, 3, 3, "F"); doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text(aj.nombre, x + w / 2, y + 13, { align: "center" });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text(s.nombre || "", x + w / 2, y + 20, { align: "center" });
+    doc.setFillColor(...colPDF()); doc.roundedRect(x + 4, y + 4, w - 8, 22, 3, 3, "F"); const lg = logoPDF(doc, x + 8, y + 7, 16); doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text(aj.nombre, x + w / 2 + (lg ? 8 : 0), y + 13, { align: "center" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text(s.nombre || "", x + w / 2 + (lg ? 8 : 0), y + 20, { align: "center" });
     doc.setTextColor(30); doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.text(`Habitación ${h.num}`, x + w / 2, y + 38, { align: "center" });
     const c = await qrCanvas(linkHab(h.qr), 400); doc.addImage(c.toDataURL("image/png"), "PNG", x + (w - 58) / 2, y + 43, 58, 58);
     doc.setFontSize(10.5); doc.text("Escanéame con tu cámara", x + w / 2, y + 108, { align: "center" }); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(90);
