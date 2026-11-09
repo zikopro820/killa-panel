@@ -1,0 +1,45 @@
+KILLA HOSPEDAJE — CÓMO CONFIGURAR (web + panel)
+================================================
+
+REPOSITORIOS
+  • killa-hospedaje → la web (killa-hospedaje-web.zip)
+  • killa-panel     → este panel (killa-panel.zip)
+  En los dos: Settings → Pages → Branch: main → Save.
+
+1. REVISA TU firebaseConfig
+   Lo copié de tu foto. Abre firebase-config.js (en los DOS repositorios) y compara la línea
+   apiKey con la de Firebase (Configuración del proyecto → Tus apps). Si un solo carácter
+   no coincide, no conecta. Lo más seguro: copia y pega desde Firebase.
+
+2. REGLAS
+   Firebase → Firestore Database → Reglas → borra todo → pega el archivo firestore.rules → Publicar.
+
+3. USUARIOS (Authentication → Users → Agregar usuario)
+   Crea al menos:  admin@killahospedaje.pe   (y una contraseña)
+   Luego, si quieres:  recepcion.lima@ · recepcion.cusco@ · recepcion.mancora@ ·
+                       recepcion.oxapampa@ · limpieza@   (todos @killahospedaje.pe)
+   ¿Quieres otros correos? Cámbialos en firebase-config.js (equipo) Y en firestore.rules.
+
+4. DOMINIO AUTORIZADO
+   Authentication → Configuración → Dominios autorizados → zikopro820.github.io (ya lo hiciste).
+
+5. PRIMERA VEZ EN EL PANEL
+   Entra como admin@ → Ajustes → «Cargar ejemplos». Se crean las 4 sedes, habitaciones con QR,
+   productos y ajustes. Después edítalos: Sedes, Habitaciones y QR, Tienda y Ajustes
+   (sube tus QR reales de Yape y Plin y tus cuentas bancarias).
+
+6. QR DE LAS HABITACIONES
+   Habitaciones y QR → «Imprimir QR» → sale un PDF con 4 tarjetas por hoja. Recórtalas y
+   pégalas en cada cuarto. Si alguien copia un QR, ábrelo y pulsa «Cambiar QR».
+
+EL DÍA A DÍA
+  • Tablero: habitaciones en colores, quién llega y quién sale hoy.
+  • Check-in: confirma el documento, cobra el saldo si quieres y se genera el PIN (4 dígitos)
+    que se envía por WhatsApp con el enlace de su habitación.
+  • El huésped pide desde el QR → suena en «Pedidos». Lo que carga a su habitación con el PIN
+    se suma solo a su cuenta y se cobra en el check-out.
+  • Check-out: muestra estadía + consumos, cobras el saldo, sale el recibo en PDF y la
+    habitación pasa a «Por limpiar». Limpieza la marca «Lista».
+  • Pagos web: cada reserva de la web llega con su captura. Revisa tu app o banca y valida.
+    Si rechazas, la habitación se libera sola.
+  • El comprobante NO reemplaza la boleta/factura de SUNAT: anota su número en la reserva.

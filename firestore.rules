@@ -1,0 +1,103 @@
+rules_version = '2';
+// =========================================================
+// KILLA HOSPEDAJE — Reglas de seguridad de Firestore
+// Pega TODO este archivo en Firebase → Firestore → Reglas → Publicar.
+// Los correos deben ser los MISMOS de firebase-config.js (equipo) del panel.
+// =========================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function equipo() {
+      return request.auth != null && request.auth.token.email in [
+        'admin@killahospedaje.pe',
+        'recepcion.lima@killahospedaje.pe',
+        'recepcion.cusco@killahospedaje.pe',
+        'recepcion.mancora@killahospedaje.pe',
+        'recepcion.oxapampa@killahospedaje.pe',
+        'limpieza@killahospedaje.pe'
+      ];
+    }
+    function admin() {
+      return request.auth != null && request.auth.token.email in ['admin@killahospedaje.pe'];
+    }
+    function d() { return request.resource.data; }
+
+    // ---------- Catálogo público (la web lo lee) ----------
+    match /ajustes/{id}      { allow read: if true; allow write: if admin(); }
+    match /sedes/{id}        { allow read: if true; allow write: if admin(); }
+    match /habitaciones/{id} { allow read: if true; allow write: if equipo(); }
+    match /productos/{id}    { allow read: if true; allow write: if equipo(); }
+
+    // ---------- QR de cada habitación: se lee solo si conoces el código ----------
+    match /qr/{k} {
+      allow get: if true;
+      allow list, write: if equipo();
+    }
+    // PIN de la estadía: nadie de afuera lo puede leer
+    match /pines/{k} { allow read, write: if equipo(); }
+
+    // ---------- Noches ocupadas: una por habitación y fecha (evita reservas dobles) ----------
+    match /ocupacion/{id} {
+      allow read: if true;
+      allow create: if equipo() || (
+        d().keys().hasOnly(['hab', 'sede', 'fecha', 'reserva', 'estado'])
+        && d().estado == 'reservada'
+        && id == d().hab + '_' + d().fecha
+        && existsAfter(/databases/$(database)/documents/reservas/$(d().reserva))
+        && getAfter(/databases/$(database)/documents/reservas/$(d().reserva)).data.hab == d().hab);
+      allow update, delete: if equipo();
+    }
+
+    // ---------- Reservas ----------
+    match /reservas/{id} {
+      allow get: if true;                    // el cliente ve su comprobante con su código
+      allow list, update, delete: if equipo();
+      allow create: if equipo() || (
+        d().keys().hasOnly(['codigo', 'sede', 'sedeNombre', 'hab', 'habNum', 'habTipo', 'llegada', 'salida', 'noches', 'adultos', 'ninos',
+          'nombre', 'docTipo', 'docNum', 'nacionalidad', 'celular', 'email', 'horaLlegada', 'nota', 'precioNoche', 'total', 'pagoTipo',
+          'monto', 'metodo', 'banco', 'operacion', 'pagado', 'estado', 'origen', 'lang', 'creado'])
+        && d().codigo == id && d().estado == 'por-validar' && d().origen == 'web' && d().pagado == 0
+        && d().total is number && d().monto is number && d().monto > 0 && d().monto <= d().total
+        && d().nombre is string && d().nombre.size() <= 80 && d().salida > d().llegada);
+    }
+
+    // ---------- Pagos web (capturas de Yape / Plin / transferencia) ----------
+    match /pagos_web/{id} {
+      allow read, update, delete: if equipo();
+      allow create: if equipo() || (
+        d().keys().hasOnly(['reserva', 'tipo', 'sede', 'nombre', 'celular', 'detalle', 'total', 'monto', 'metodo', 'banco', 'operacion',
+          'captura', 'montoLeido', 'montosLeidos', 'coincide', 'fechaOk', 'estado', 'creado'])
+        && d().estado == 'por-validar' && d().reserva == id
+        && existsAfter(/databases/$(database)/documents/reservas/$(id))
+        && d().captura is string && d().captura.size() < 900000 && d().monto is number);
+    }
+
+    // ---------- Pedidos (tienda web y QR de la habitación) ----------
+    match /pedidos/{id} {
+      allow get: if true;                    // el huésped ve el estado de SUS pedidos
+      allow list, update, delete: if equipo();
+      allow create: if equipo() || (
+        d().keys().hasOnly(['tipo', 'origen', 'sede', 'hab', 'num', 'qr', 'items', 'total', 'pago', 'pin', 'estado', 'lang', 'creado',
+          'servicio', 'detalle', 'foto', 'estrellas', 'entrega', 'nombre', 'celular', 'metodo', 'banco', 'monto', 'operacion', 'captura', 'montoLeido', 'coincide'])
+        && d().tipo in ['tienda', 'servicio', 'tour', 'encuesta']
+        && (!('captura' in d()) || (d().captura is string && d().captura.size() < 900000))
+        && (!('foto' in d()) || (d().foto is string && d().foto.size() < 400000))
+        && (
+          // tienda de la web: siempre con captura de pago, queda por validar
+          (d().origen == 'web' && d().tipo == 'tienda' && d().estado == 'por-validar' && d().pago == 'web')
+          ||
+          // desde el QR de la habitación
+          (d().origen == 'habitacion' && d().estado == 'nuevo'
+            && exists(/databases/$(database)/documents/qr/$(d().qr))
+            && get(/databases/$(database)/documents/qr/$(d().qr)).data.hab == d().hab
+            && (!('pago' in d()) || d().pago != 'habitacion'
+                || (exists(/databases/$(database)/documents/pines/$(d().qr))
+                    && get(/databases/$(database)/documents/pines/$(d().qr)).data.pin == d().pin)))
+        ));
+    }
+
+    // ---------- Solo el equipo ----------
+    match /clientes/{id}    { allow read, write: if equipo(); }
+    match /movimientos/{id} { allow read, write: if equipo(); }
+  }
+}
