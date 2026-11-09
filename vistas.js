@@ -430,24 +430,65 @@ VIEWS.huespedes = async () => {
 
 /* ================= TIENDA (productos) ================= */
 VIEWS.tienda = async () => {
-  await cargarCatalogo(); const l = CAT.prods.slice().sort((a, b) => String(a.cat).localeCompare(b.cat) || a.n.localeCompare(b.n)), bajos = l.filter(p => p.activo !== false && p.stock != null && +p.stock <= 5);
-  $("#view").innerHTML = topBar("Tienda", "Productos que se ven en la web y en el QR de cada habitación.", esAdm() || YO().rol === "Recepción" ? `<button class="btn btn-pri btn-sm" id="np">${ico("plus")} Producto</button>` : "") +
-    (bajos.length ? `<div class="alert warn">${ico("alert")} <span>Stock bajo: ${bajos.map(p => `${esc(p.n)} (${p.stock})`).join(", ")}</span></div>` : "") +
-    `<section class="card"><div class="tbl-w"><table class="tbl"><thead><tr><th></th><th>Producto</th><th>Categoría</th><th>Dónde</th><th class="r">Precio</th><th>Stock</th><th></th></tr></thead><tbody>
-    ${l.map(p => `<tr class="${p.activo === false ? "off" : ""}"><td class="emo">${esc(p.e || "🛍️")}</td><td><b>${esc(p.n)}</b><small>${esc(p.n_en || "")}</small></td><td>${esc(p.cat)}</td><td>${p.sede && p.sede !== "todas" ? esc(sedeDe(p.sede).nombre) : "Todas"}${p.tipos ? `<small>Solo ${p.tipos.join(", ")}</small>` : ""}</td><td class="r">${S(p.precio)}</td>
-      <td><div class="stk"><button class="btn btn-light btn-xs" data-st="-1|${esc(p.id)}" aria-label="Menos">${ico("minus")}</button><b class="${+p.stock <= 5 ? "neg" : ""}">${p.stock ?? "∞"}</b><button class="btn btn-light btn-xs" data-st="1|${esc(p.id)}" aria-label="Más">${ico("plus")}</button></div></td>
-      <td><button class="btn btn-light btn-sm" data-ep="${esc(p.id)}">${ico("edit")}</button></td></tr>`).join("")}</tbody></table></div></section>`;
-  const form = p => modal(p ? "Editar producto" : "Nuevo producto", `<div class="g2">${fld("e", "Emoji", p?.e || "🛍️", { extra: 'maxlength="4"' })}${fld("cat", "Categoría", p?.cat || "bebidas", { opts: ["bebidas", "snacks", "desayuno", "aseo", "souvenirs", "playa", "campo"] })}
-    ${fld("n", "Nombre", p?.n || "", { req: true })}${fld("n_en", "Nombre en inglés", p?.n_en || "")}${fld("precio", "Precio (S/)", p?.precio ?? "", { type: "number", req: true, extra: 'min="0" step="0.1"' })}${fld("stock", "Stock", p?.stock ?? 20, { type: "number", extra: 'min="0"' })}
-    ${fld("sede", "Disponible en", p?.sede || "todas", { opts: [["todas", "Todas las sedes"], ...CAT.sedes.map(s => [s.id, s.nombre])] })}${fld("tipos", "Solo en estilo (opcional)", (p?.tipos || []).join(","), { opts: [["", "Todos"], ["turistico", "Turístico"], ["playa", "Playa"], ["campo", "Campo"], ["ciudad", "Ciudad"], ["campo,playa", "Campo y playa"]] })}
-    ${fld("activo", "Visible para los clientes", p ? p.activo !== false : true, { type: "checkbox", full: true })}</div>${p ? `<button type="button" class="btn btn-light danger btn-sm" id="delP">${ico("trash")} Eliminar</button>` : ""}`, async d => {
-    const id = p?.id || "p-" + Date.now().toString(36); await DB.set("productos", id, { ...d, tipos: d.tipos ? d.tipos.split(",") : null, precio: +d.precio, stock: d.stock === "" ? null : +d.stock }, false); toast("Producto guardado"); VIEWS.tienda(); },
-    "Guardar", { alAbrir: () => $("#delP")?.addEventListener("click", async () => { if (!confirm("¿Eliminar este producto?")) return; await DB.del("productos", p.id); cerrarModal(); VIEWS.tienda(); }) });
-  $("#np")?.addEventListener("click", () => form());
-  $("#view").onclick = async e => { const ep = e.target.closest("[data-ep]"), st = e.target.closest("[data-st]");
+  await cargarCatalogo();
+  const comunes = CAT.prods.filter(p => !p.sede || p.sede === "todas");
+  const l = CAT.prods.filter(p => p.sede && p.sede !== "todas" && enSede(p.sede)).sort((a, b) => ordSede(a.sede) - ordSede(b.sede) || String(a.cat).localeCompare(b.cat) || a.n.localeCompare(b.n));
+  const bajos = l.filter(p => p.activo !== false && p.stock != null && +p.stock <= 5);
+  const sedesV = [...new Set(l.map(p => p.sede))], valor = l.reduce((a, p) => a + (+p.precio || 0) * (+p.stock || 0), 0);
+  const img = p => p.foto ? `<img class="p-th" src="${esc(p.foto)}" alt="">` : `<span class="p-th e">${esc(p.e || "🛍️")}</span>`;
+  $("#view").innerHTML = topBar("Tienda e inventario", SEDE === "todas" ? "Cada sede tiene sus propios productos, precios y stock." : `Productos de ${esc(sedeDe(SEDE).nombre)}.`, `<button class="btn btn-pri btn-sm" id="np">${ico("plus")} Producto</button>`) +
+    (comunes.length && esAdm() ? `<section class="card hi"><h2>${ico("bag")} Separar productos por sede</h2><p>Tienes <b>${comunes.length}</b> producto(s) compartidos por todas las sedes. Con un clic cada sede recibe su propia copia (según su estilo: playa, campo, etc.) y desde ahí maneja su propio stock y precio.</p><button class="btn btn-pri" id="sep">Separar ahora</button></section>` : "") +
+    `<div class="kpis"><div class="kpi"><span>Productos</span><b>${l.length}</b><small>${sedesV.length} sede(s)</small></div><div class="kpi"><span>Stock bajo (≤ 5)</span><b class="${bajos.length ? "neg" : ""}">${bajos.length}</b><small>${bajos.filter(p => +p.stock <= 0).length} agotado(s)</small></div>
+      <div class="kpi"><span>Valor del inventario</span><b>${S(valor)}</b><small>a precio de venta</small></div><div class="kpi"><span>Sin foto</span><b>${l.filter(p => !p.foto).length}</b><small>muestran su emoji</small></div></div>` +
+    (bajos.length ? `<div class="alert warn">${ico("alert")} <span>Stock bajo: ${bajos.map(p => `${esc(p.n)}${SEDE === "todas" ? ` (${esc(sedeDe(p.sede).nombre || p.sede)})` : ""}: <b>${p.stock}</b>`).join(" · ")}</span></div>` : "") +
+    (sedesV.map(sid => { const lp = l.filter(p => p.sede === sid); return `<section class="card"><div class="card-h"><h2>${ico("building")} ${esc(sedeDe(sid).nombre || sid)}</h2><span class="muted sm">${lp.length} productos · stock total ${lp.reduce((a, p) => a + (+p.stock || 0), 0)} u.</span></div>
+      <div class="tbl-w"><table class="tbl"><thead><tr><th></th><th>Producto</th><th>Categoría</th><th class="r">Precio</th><th>Stock</th><th></th></tr></thead><tbody>
+      ${lp.map(p => `<tr class="${p.activo === false ? "off" : ""}"><td>${img(p)}</td><td><b>${esc(p.n)}</b><small>${esc(p.n_en || "")}${p.activo === false ? " · oculto" : ""}</small></td><td>${esc(p.cat)}</td><td class="r">${S(p.precio)}</td>
+        <td><div class="stk"><button class="btn btn-light btn-xs" data-st="-1|${esc(p.id)}" aria-label="Menos">${ico("minus")}</button><b class="${p.stock != null && +p.stock <= 5 ? "neg" : ""}">${p.stock ?? "∞"}</b><button class="btn btn-light btn-xs" data-st="1|${esc(p.id)}" aria-label="Más">${ico("plus")}</button><button class="btn btn-light btn-xs" data-rep="${esc(p.id)}">Reponer</button></div></td>
+        <td><button class="btn btn-light btn-sm" data-ep="${esc(p.id)}" aria-label="Editar">${ico("edit")}</button></td></tr>`).join("")}</tbody></table></div></section>`; }).join("") || vacio("Aún no hay productos en esta sede. Pulsa «Producto» para agregar el primero."));
+  const sedesMias = CAT.sedes.filter(x => misSedes().includes(x.id));
+  const form = p => modal(p ? "Editar producto" : "Nuevo producto", `<div class="g2">
+    <div class="full"><span class="lbl">Foto del producto</span><div class="foto-up"><span id="pPrev" class="p-prev">${p?.foto ? `<img src="${esc(p.foto)}" alt="">` : esc(p?.e || "🛍️")}</span>
+      <label class="btn btn-light btn-sm">${ico("camera")} ${p?.foto ? "Cambiar foto" : "Subir foto"}<input type="file" accept="image/*" id="pFile" hidden></label>${p?.foto ? `<button type="button" class="btn btn-light btn-sm" id="pQuitar">Quitar foto</button>` : ""}
+      <input type="hidden" name="foto" value="${esc(p?.foto || "")}"><small class="muted">Foto cuadrada, de frente y con fondo claro. Se achica sola.</small></div></div>
+    ${fld("sede", "Sede", p?.sede && p.sede !== "todas" ? p.sede : (SEDE !== "todas" ? SEDE : sedesMias[0]?.id), { opts: sedesMias.map(x => [x.id, x.nombre]) })}${fld("cat", "Categoría", p?.cat || "bebidas", { opts: [["bebidas", "Bebidas"], ["snacks", "Snacks"], ["desayuno", "Desayuno"], ["aseo", "Viaje y aseo"], ["souvenirs", "Recuerdos"], ["playa", "Playa"], ["campo", "Campo"]] })}
+    ${fld("n", "Nombre", p?.n || "", { req: true })}${fld("n_en", "Nombre en inglés", p?.n_en || "")}${fld("precio", "Precio (S/)", p?.precio ?? "", { type: "number", req: true, extra: 'min="0" step="0.1"' })}${fld("stock", "Stock", p?.stock ?? 20, { type: "number", extra: 'min="0"', help: "Déjalo vacío si no se controla (ej. servicios)." })}
+    ${fld("e", "Emoji (si no hay foto)", p?.e || "🛍️", { extra: 'maxlength="4"' })}${fld("activo", "Visible para los clientes", p ? p.activo !== false : true, { type: "checkbox" })}</div>
+    <div class="acts-g">${p && esAdm() && CAT.sedes.length > 1 ? `<button type="button" class="btn btn-light btn-sm" id="cpP">${ico("plus")} Copiar a otras sedes</button>` : ""}${p ? `<button type="button" class="btn btn-light danger btn-sm" id="delP">${ico("trash")} Eliminar</button>` : ""}</div>`, async d => {
+    if (!misSedes().includes(d.sede)) { toast("No puedes editar productos de esa sede", true); return false; }
+    const id = p?.id || "p-" + Date.now().toString(36) + "-" + d.sede;
+    const data = { sede: d.sede, cat: d.cat, n: d.n, n_en: d.n_en, precio: +d.precio, stock: d.stock === "" ? null : Math.max(0, +d.stock), e: d.e || "🛍️", foto: d.foto || "", activo: d.activo, base: p?.base || "", actualizado: new Date().toISOString(), por: YO().nombre };
+    if (JSON.stringify(data).length > 700000) { toast("La foto pesa demasiado, prueba con otra", true); return false; }
+    await DB.set("productos", id, data, false); toast("Producto guardado"); VIEWS.tienda(); }, "Guardar", { wide: true, alAbrir: F => {
+    $("#pFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 480, .72); $("[name=foto]", F).value = u; $("#pPrev").innerHTML = `<img src="${u}" alt="">`; });
+    $("#pQuitar")?.addEventListener("click", () => { $("[name=foto]", F).value = ""; $("#pPrev").textContent = $("[name=e]", F).value || "🛍️"; });
+    $("#delP")?.addEventListener("click", async () => { if (!confirm(`¿Eliminar «${p.n}» de ${sedeDe(p.sede).nombre || "esta sede"}?`)) return; await DB.del("productos", p.id); cerrarModal(); VIEWS.tienda(); });
+    $("#cpP")?.addEventListener("click", () => { const otras = CAT.sedes.filter(x => x.id !== p.sede);
+      modal(`Copiar «${p.n}»`, `<p class="muted">Se crea una copia en cada sede elegida, con su propio stock. El precio y la foto se copian; luego cada sede puede cambiarlos.</p>
+        <div class="g2">${otras.map(x => { const ya = CAT.prods.find(q => q.sede === x.id && (q.n === p.n || q.base && q.base === p.base)); return fld("s_" + x.id, `${x.nombre}${ya ? " (ya lo tiene)" : ""}`, !ya, { type: "checkbox" }); }).join("")}
+        ${fld("stock", "Stock inicial en cada sede", p.stock ?? 20, { type: "number", extra: 'min="0"' })}</div>`, async d => {
+        const ops = otras.filter(x => d["s_" + x.id]).map(x => ({ op: "set", col: "productos", id: (p.base || p.id.replace(/-[a-z]+$/, "")) + "-" + x.id + (CAT.prods.find(q => q.id === (p.base || p.id.replace(/-[a-z]+$/, "")) + "-" + x.id) ? "-" + Date.now().toString(36).slice(-3) : ""), data: { ...p, id: undefined, sede: x.id, stock: d.stock === "" ? null : +d.stock, base: p.base || p.id }, merge: false }));
+        if (!ops.length) { toast("Elige al menos una sede", true); return false; }
+        await DB.batch(ops); toast(`Copiado a ${ops.length} sede(s)`); VIEWS.tienda(); }, "Copiar"); });
+  } });
+  $("#np").addEventListener("click", () => form());
+  $("#sep")?.addEventListener("click", async () => {
+    if (!CAT.sedes.length) return toast("Primero carga o crea tus sedes", true);
+    if (!confirm(`Se crearán copias por sede de ${comunes.length} producto(s) y se borrarán los compartidos. ¿Continuar?`)) return;
+    const nuevos = window.KH_PRODS_POR_SEDE(comunes, CAT.sedes).filter(n => !CAT.prods.find(q => q.id === n.id));
+    await DB.batch([...nuevos.map(n => ({ op: "set", col: "productos", id: n.id, data: { ...n, id: undefined }, merge: false })), ...comunes.map(c => ({ op: "del", col: "productos", id: c.id }))]);
+    toast(`Listo: ${nuevos.length} productos repartidos entre ${CAT.sedes.length} sedes`); VIEWS.tienda(); });
+  $("#view").onclick = async e => { const ep = e.target.closest("[data-ep]"), st = e.target.closest("[data-st]"), rp = e.target.closest("[data-rep]");
     if (ep) return form(CAT.prods.find(p => p.id === ep.dataset.ep));
-    if (st) { const [d, id] = st.dataset.st.split("|"), p = CAT.prods.find(x => x.id === id); p.stock = Math.max(0, (+p.stock || 0) + +d); await DB.set("productos", id, { stock: p.stock }); st.parentElement.querySelector("b").textContent = p.stock; } };
+    if (st) { const [d, id] = st.dataset.st.split("|"), p = CAT.prods.find(x => x.id === id); p.stock = Math.max(0, (+p.stock || 0) + +d); await DB.set("productos", id, { stock: p.stock }); st.parentElement.querySelector("b").textContent = p.stock; }
+    if (rp) { const p = CAT.prods.find(x => x.id === rp.dataset.rep);
+      modal(`Reponer · ${p.n}`, `<p class="muted">${esc(sedeDe(p.sede).nombre || "")} · stock actual <b>${p.stock ?? 0}</b></p>${fld("cant", "¿Cuántas unidades llegaron?", "", { type: "number", req: true, extra: 'min="1"' })}${fld("costo", "Costo total de la compra (opcional, se registra como egreso en caja)", "", { type: "number", extra: 'min="0" step="0.1"' })}${fld("metodo", "Pagado con", "Efectivo", { opts: METODOS })}`, async d => {
+        const n = Math.max(0, (+p.stock || 0) + (+d.cant || 0)), ops = [{ op: "set", col: "productos", id: p.id, data: { stock: n } }];
+        if (+d.costo > 0) ops.push(movimiento({ sede: p.sede, concepto: `Compra de ${d.cant} × ${p.n}`, monto: -(+d.costo), metodo: d.metodo }));
+        await DB.batch(ops); toast(`Stock de ${p.n}: ${n}`); VIEWS.tienda(); }, "Reponer"); }
+  };
 };
+const ordSede = id => (CAT.sedes.find(s => s.id === id) || {}).orden ?? 99;
 
 /* ================= HABITACIONES y QR ================= */
 const AMEN = ["wifi", "tv", "escritorio", "agua", "frigobar", "balcon", "tina", "calefaccion", "mate", "aire", "terraza", "hamaca", "ventilador", "chimenea", "cocina", "parrilla"];
@@ -556,7 +597,7 @@ VIEWS.ajustes = async () => {
     const D = window.KH_DATOS, ops = [{ op: "set", col: "ajustes", id: "general", data: D.ajustes }];
     D.sedes.forEach((s, i) => ops.push({ op: "set", col: "sedes", id: s.id, data: { ...s, orden: i, wifiNombre: s.nombre.replace(/\s+/g, "_"), wifiClave: "killa" + (2026 + i) } }));
     D.habitaciones.forEach(h => { const k = llaveQR(), s = D.sedes.find(x => x.id === h.sede); ops.push({ op: "set", col: "habitaciones", id: h.id, data: { ...h, estado: "libre", qr: k } }, { op: "set", col: "qr", id: k, data: { sede: h.sede, hab: h.id, num: h.num, wifiNombre: s.nombre.replace(/\s+/g, "_"), wifiClave: "killa" + (2026 + D.sedes.indexOf(s)) } }); });
-    D.productos.forEach(p => ops.push({ op: "set", col: "productos", id: p.id, data: { ...p, activo: true } }));
+    window.KH_PRODS_POR_SEDE(D.productos, D.sedes).forEach(p => ops.push({ op: "set", col: "productos", id: p.id, data: { ...p, id: undefined } }));
     await DB.batch(ops); toast("Ejemplos cargados"); await cargarCatalogo(); go("sedes");
   });
 };
