@@ -159,3 +159,4 @@ h1, h2 { font-family: "Manrope", system-ui, sans-serif; letter-spacing: -.02em; 
 .t-f { display: grid; grid-template-columns: 1.3fr 1.3fr .6fr 1.5fr; gap: 6px; } .t-f input { font: 500 .86rem "Inter"; padding: 7px 9px; border: 1.5px solid var(--line); border-radius: 8px; min-width: 0; }
 .t-x { background: none; border: 0; color: var(--bad); cursor: pointer; padding: 6px; border-radius: 8px; } .t-x:hover { background: var(--badb); }
 @media (max-width: 820px) { .t-f { grid-template-columns: 1fr 1fr; } }
+.zona-peligro { margin-top: 18px; border: 1.5px solid #f3c7c3; background: #fff8f7; border-radius: 12px; padding: 12px 14px; } .zona-peligro p { margin: 4px 0 10px; }

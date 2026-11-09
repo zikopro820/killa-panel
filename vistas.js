@@ -531,10 +531,26 @@ VIEWS.habitaciones = async () => {
 };
 
 /* ================= SEDES ================= */
+async function eliminarSede(s) {
+  const hoy = HOY(), activas = (await DB.list("reservas", ["sede", "==", s.id])).filter(r => ["por-validar", "confirmada", "checkin"].includes(r.estado) && r.salida >= hoy);
+  if (activas.length) return modal(`No se puede eliminar ${s.nombre}`, `<div class="alert bad">${ico("alert")} <span>Tiene <b>${activas.length}</b> reserva(s) vigentes o próximas. Cancélalas o espera a que terminen antes de eliminarla.</span></div>
+    <ul class="lst">${activas.slice(0, 8).map(r => `<li><div><b>${esc(r.nombre)}</b><small>${esc(r.codigo || r.id)} · Hab. ${esc(r.habNum)} · ${fmtF(r.llegada)} → ${fmtF(r.salida)}</small></div>${estR(r.estado)}</li>`).join("")}</ul>
+    <p class="muted">Si solo quieres que no se vea en la web, edita la sede y apaga «Sede visible en la web».</p>`, null);
+  const habs = CAT.habs.filter(h => h.sede === s.id), prods = CAT.prods.filter(p => p.sede === s.id);
+  modal(`Eliminar ${s.nombre}`, `<div class="alert bad">${ico("alert")} <span>Esto no se puede deshacer.</span></div>
+    <p>Se borrarán: la sede, <b>${habs.length}</b> habitación(es) con sus QR y fotos, y <b>${prods.length}</b> producto(s) de su tienda.</p><p class="muted sm">Se conservan las reservas pasadas, los movimientos de caja, los huéspedes y los pedidos, para tus reportes.</p>
+    ${fld("confirma", `Para confirmar, escribe el nombre: ${esc(s.nombre)}`, "", { full: true, req: true, extra: 'autocomplete="off"' })}`, async d => {
+    if (d.confirma.trim().toLowerCase() !== s.nombre.trim().toLowerCase()) { toast("El nombre no coincide", true); return false; }
+    const ocs = await DB.list("ocupacion", ["sede", "==", s.id]);
+    const ops = [{ op: "del", col: "sedes", id: s.id }, ...habs.flatMap(h => [{ op: "del", col: "habitaciones", id: h.id }, { op: "del", col: "galeria", id: h.id }, ...(h.qr ? [{ op: "del", col: "qr", id: h.qr }, { op: "del", col: "pines", id: h.qr }] : [])]),
+      ...prods.map(p => ({ op: "del", col: "productos", id: p.id })), ...ocs.map(o => ({ op: "del", col: "ocupacion", id: o.id }))];
+    await DB.batch(ops); if (SEDE === s.id) { SEDE = "todas"; store.set("kh_psede", SEDE); }
+    toast(`${s.nombre} eliminada`); setTimeout(() => location.reload(), 900); }, "Eliminar para siempre");
+}
 VIEWS.sedes = async () => {
   await cargarCatalogo();
   $("#view").innerHTML = topBar("Sedes", "Tus hospedajes. Cada uno con su estilo, WiFi, reglas, tours y lugares cercanos.", `<button class="btn btn-pri btn-sm" id="ns">${ico("plus")} Sede</button>`) +
-    `<div class="habs-a">${CAT.sedes.map(s => `<article class="card hab-a"><div class="hab-f" style="background-image:url('${esc(IMG(s.foto, 600))}')"></div><div class="hab-ab"><div class="hab-h"><b>${esc(s.nombre)}</b><span class="st pri">${esc({ ciudad: "Ciudad", turistico: "Turístico", playa: "Playa", campo: "Campo" }[s.tipo] || s.tipo)}</span></div>
+    `<div class="habs-a">${CAT.sedes.map(s => `<article class="card hab-a ${s.activa === false ? "off" : ""}"><div class="hab-f" style="background-image:url('${esc(IMG(s.foto, 600))}')"></div><div class="hab-ab"><div class="hab-h"><b>${esc(s.nombre)}${s.activa === false ? ` <span class="st bad">Oculta</span>` : ""}</b><span class="st pri">${esc({ ciudad: "Ciudad", turistico: "Turístico", playa: "Playa", campo: "Campo" }[s.tipo] || s.tipo)}</span></div>
       <p class="muted">${esc(s.direccion)}, ${esc(s.ciudad)}</p><p class="sm">${CAT.habs.filter(h => h.sede === s.id).length} habitaciones · WiFi ${esc(s.wifiNombre || "—")}</p><button class="btn btn-light btn-sm" data-es="${esc(s.id)}">${ico("edit")} Editar</button></div></article>`).join("")}</div>`;
   const lineas = a => (a || []).join("\n"), cerca = a => (a || []).map(c => `${c.n} | ${c.d || ""}`).join("\n"), tours = a => (a || []).map(x => `${x.n} | ${x.precio} | ${x.d || ""}`).join("\n");
   let TOURS = [];
@@ -554,6 +570,7 @@ VIEWS.sedes = async () => {
     ${fld("reglas", "Reglas e info útil (una por línea)", lineas(s?.reglas), { type: "textarea", full: true })}${fld("reglas_en", "Reglas en inglés (una por línea)", lineas(s?.reglas_en), { type: "textarea", full: true })}
     ${fld("cerca", "Lugares cercanos (nombre | distancia)", cerca(s?.cerca), { type: "textarea", full: true, ph: "Plaza de Armas | 5 min a pie" })}<div class="full"><span class="lbl">Tours y actividades (se reservan desde el QR de la habitación)</span><div id="tourEd" class="tour-ed"></div><button type="button" class="btn btn-light btn-sm" id="tAdd">${ico("plus")} Agregar tour</button></div>
     ${fld("resena", "Enlace para reseñas de Google", s?.resena || "", { full: true, ph: "https://g.page/r/…" })}
+    ${fld("activa", "Sede visible en la web (apágalo para ocultarla sin borrar nada, por ejemplo si cierra por temporada)", s ? s.activa !== false : true, { type: "checkbox", full: true })}
     <div class="full"><span class="lbl">Foto principal</span><div class="foto-up"><span id="fPrev" style="background-image:url('${esc(IMG(s?.foto, 400))}')"></span><label class="btn btn-light btn-sm">${ico("camera")} Subir foto<input type="file" accept="image/*" id="fFile" hidden></label><input type="hidden" name="foto" value="${esc(s?.foto || "")}"></div></div></div>`, async d => {
     const id = s?.id || d.nombre.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/^killa\s+/, "").replace(/\W+/g, "-").replace(/^-|-$/g, "") || "sede-" + Date.now().toString(36);
     const sp = t => t.split("\n").map(x => x.trim()).filter(Boolean), old = s ? (s.tours || []) : [];
@@ -562,7 +579,8 @@ VIEWS.sedes = async () => {
       servicios: sp(d.servicios).map(x => { const [es, en, ic] = x.split("|").map(y => (y || "").trim()); return { es, en: en || "", ic: ic || "check" }; }).filter(x => x.es), orden: s?.orden ?? CAT.sedes.length };
     const ops = [{ op: "set", col: "sedes", id, data }];
     if (s && (s.wifiNombre !== d.wifiNombre || s.wifiClave !== d.wifiClave)) CAT.habs.filter(h => h.sede === id && h.qr).forEach(h => ops.push({ op: "set", col: "qr", id: h.qr, data: { wifiNombre: d.wifiNombre, wifiClave: d.wifiClave } }));
-    await DB.batch(ops); toast("Sede guardada"); VIEWS.sedes(); }, "Guardar", { wide: true, alAbrir: F => { $("#fFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 1400, .7); $("[name=foto]", F).value = u; $("#fPrev").style.backgroundImage = `url('${u}')`; });
+    await DB.batch(ops); toast("Sede guardada"); VIEWS.sedes(); }, "Guardar", { wide: true, alAbrir: F => { if (s) $("#mB").insertAdjacentHTML("beforeend", `<div class="zona-peligro"><b>Zona de peligro</b><p class="muted sm">Eliminar borra la sede, sus habitaciones, sus QR y sus productos. Las reservas pasadas, la caja y los huéspedes se conservan para tus reportes.</p><button type="button" class="btn btn-light danger btn-sm" id="delS">${ico("trash")} Eliminar sede</button></div>`);
+    $("#delS")?.addEventListener("click", () => eliminarSede(s)); $("#fFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; const u = await redimensionar(f, 1400, .7); $("[name=foto]", F).value = u; $("#fPrev").style.backgroundImage = `url('${u}')`; });
     pintarTours();
     $("#tAdd").addEventListener("click", () => { leerTours(); TOURS.push({ n: "", n_en: "", precio: "", d: "", foto: "" }); pintarTours(); $("#tourEd .t-row:last-child [data-t=n]").focus(); });
     $("#tourEd").addEventListener("click", e => { const x = e.target.closest("[data-tx]"); if (x) { leerTours(); TOURS.splice(+x.dataset.tx, 1); pintarTours(); } });
