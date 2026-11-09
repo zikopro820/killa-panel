@@ -57,7 +57,7 @@ async function iniciar(p) {
 async function go(v) {
   VISTA = v; $$(".s-nav button").forEach(b => b.setAttribute("aria-current", b.dataset.v === v ? "page" : "false")); $("#side")?.classList.remove("open");
   $("#view").innerHTML = `<div class="loading"><span class="spin"></span></div>`;
-  try { await VIEWS[v](); } catch (e) { console.error(e); $("#view").innerHTML = `<div class="empty">${ico("alert")}<p>No se pudo cargar: ${esc(e.message)}</p></div>`; }
+  try { await VIEWS[v](); if (!CAT.sedes.length && esAdm() && v !== "ajustes") $("#view").insertAdjacentHTML("afterbegin", `<div class="alert warn">${ico("alert")} <span><b>Tu base de datos aún no tiene sedes ni habitaciones.</b> Las reservas de la web llegan igual, pero para ver el calendario y el tablero completos ve a Ajustes y pulsa «Cargar ejemplos».</span><button class="btn btn-pri btn-sm" data-go="ajustes">Ir a Ajustes</button></div>`); } catch (e) { console.error(e); $("#view").innerHTML = `<div class="empty">${ico("alert")}<p>No se pudo cargar: ${esc(e.message)}</p></div>`; }
 }
 const refrescar = () => go(VISTA);
 

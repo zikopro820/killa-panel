@@ -99,7 +99,7 @@ const YO = () => USER || {};
 const esAdm = () => YO().rol === "Administración";
 const esLimp = () => YO().rol === "Limpieza";
 const misSedes = () => YO().sedes === "todas" || esAdm() ? CAT.sedes.map(s => s.id) : (YO().sedes || []);
-const enSede = id => (SEDE === "todas" ? misSedes() : [SEDE]).includes(id);
+const enSede = id => SEDE === "todas" ? (esAdm() || YO().sedes === "todas" || misSedes().includes(id)) : id === SEDE;
 function perfil(email) { return (APP.equipo || []).find(p => p.email.toLowerCase() === String(email || "").toLowerCase()) || null; }
 
 /* ---------- Interfaz común ---------- */
